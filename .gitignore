@@ -24,3 +24,8 @@ results/
 # OS
 .DS_Store
 Thumbs.db
+
+# Local/private configs
+configs/*.local.yaml
+configs/*.local.yml
+

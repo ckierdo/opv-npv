@@ -1,0 +1,51 @@
+project:
+  name: "Spain NPV scan - Almeria"
+  discount_rate: 0.07
+  project_years: 25
+
+paths:
+  # Fill these on your machine in configs/spain_almeria.local.yaml
+  hourly_balance_csv: "data/raw/hourly_balance.csv"
+  price_da_csv: "data/raw/prices_es_2023.csv"
+  crops_csv: "data/raw/crops.csv"
+  out_dir: "results/tables"
+
+region:
+  name: "Almeria"
+  key: "ALMERIA"
+
+tariffs:
+  p_retail_eur_per_kwh: 0.157
+  export_fee_factor: 0.95
+
+battery:
+  eta_rt: 0.95
+  opex_frac: 0.015
+  repl_year: 15
+  repl_factor: 0.8
+  base_capex_eur_per_kwh: 400.0
+  reduction_per_4x: 0.10
+  capacity_range_kwh: [0, 25]
+
+pv:
+  area_m2: 1000.0
+  pv_opex_frac: 0.015
+
+  module_w_m2:
+    polySi: 230.0
+    opv63: 63.0
+    opv145: 145.0
+
+  deg_per_year:
+    polySi: 0.005
+    opv63: 0.01
+    opv145: 0.01
+
+  capex_eur_per_kwp:
+    polySi: 970.0
+    opv63: 3345.0
+    opv145: 940.0
+
+runtime:
+  solver_msg: false
+  debug: false
