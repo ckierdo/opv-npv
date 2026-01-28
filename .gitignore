@@ -1,0 +1,26 @@
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Conda / virtual envs
+.env
+.venv/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Editor settings
+.vscode/
+.idea/
+
+# Data & results (important!)
+data/raw/
+data/processed/
+results/
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
