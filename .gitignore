@@ -25,9 +25,11 @@ results/
 .DS_Store
 Thumbs.db
 
-# Local/private configs
+# Local/private configs # outdated
 configs/*.local.yaml
 configs/*.local.yml
 
 # local absolute paths (do not commit)
 src/opvnpv/paths_local.py
+# Python packaging artifacts
+*.egg-info/
