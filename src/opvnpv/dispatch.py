@@ -38,6 +38,9 @@ def dispatch_no_acogida(pv, load, p_sell, p_retail, C):
     exp = pl.LpVariable.dicts("exp", idx, lowBound=0)  # PV -> grid
     imp = pl.LpVariable.dicts("imp", idx, lowBound=0)  # grid -> load (balance var)
     soc = pl.LpVariable.dicts("soc", idx, lowBound=0, upBound=C)
+        # Prevent simultaneous charge and discharge (MILP)
+    y = pl.LpVariable.dicts("y", idx, lowBound=0, upBound=1, cat="Binary")
+    M = float(max(np.max(pv), np.max(load)))  # Big-M upper bound for hourly power
 
     # Objective: incremental benefit (EUR)
     model += pl.lpSum(
@@ -48,6 +51,10 @@ def dispatch_no_acogida(pv, load, p_sell, p_retail, C):
     for t in idx:
         model += sc[t] + ch[t] + exp[t] <= pv[t]
         model += sc[t] + dis[t] + imp[t] == load[t]
+            # Prevent simultaneous charge and discharge (MILP)
+           # Either charge OR discharge in the same hour (no simultaneous cycling)
+        model += ch[t]  <= M * y[t]
+        model += dis[t] <= M * (1 - y[t])
 
         if t == 0:
             model += soc[t] == ETA_CH * ch[t] - (1 / ETA_DIS) * dis[t]
@@ -58,7 +65,8 @@ def dispatch_no_acogida(pv, load, p_sell, p_retail, C):
 
     _solve_or_raise(model)
 
-    op_value = float(pl.value(model.objective))
+    energy_operating_value_y1 = float(pl.value(model.objective))
+
 
     sc_arr  = np.array([pl.value(sc[t])  for t in idx], dtype=float)
     ch_arr  = np.array([pl.value(ch[t])  for t in idx], dtype=float)
@@ -74,7 +82,8 @@ def dispatch_no_acogida(pv, load, p_sell, p_retail, C):
             soc_arr[t] = x
 
     dispatch = {"sc": sc_arr, "ch": ch_arr, "dis": dis_arr, "exp": exp_arr, "imp": imp_arr, "soc": soc_arr}
-    return op_value, dispatch
+    return energy_operating_value_y1, dispatch
+
 
 
 # ============================================================
@@ -110,6 +119,9 @@ def dispatch_compsim_cap(pv, load, p_retail, p_comp, month_ids, C):
     exp = pl.LpVariable.dicts("exp", idx, lowBound=0)
     imp = pl.LpVariable.dicts("imp", idx, lowBound=0)
     soc = pl.LpVariable.dicts("soc", idx, lowBound=0, upBound=C)
+        # Prevent simultaneous charge and discharge (MILP)
+    y = pl.LpVariable.dicts("y", idx, lowBound=0, upBound=1, cat="Binary")
+    M = float(max(np.max(pv), np.max(load)))  # Big-M upper bound for hourly power
 
     credit = pl.LpVariable.dicts("credit", months, lowBound=0)  # EUR per month
 
@@ -122,6 +134,9 @@ def dispatch_compsim_cap(pv, load, p_retail, p_comp, month_ids, C):
     for t in idx:
         model += sc[t] + ch[t] + exp[t] <= pv[t]
         model += sc[t] + dis[t] + imp[t] == load[t]
+                # Either charge OR discharge in the same hour (no simultaneous cycling)
+        model += ch[t]  <= M * y[t]
+        model += dis[t] <= M * (1 - y[t])
 
         if t == 0:
             model += soc[t] == ETA_CH * ch[t] - (1 / ETA_DIS) * dis[t]
@@ -138,7 +153,8 @@ def dispatch_compsim_cap(pv, load, p_retail, p_comp, month_ids, C):
 
     _solve_or_raise(model)
 
-    op_value = float(pl.value(model.objective))
+    energy_operating_value_y1 = float(pl.value(model.objective))
+
 
     sc_arr  = np.array([pl.value(sc[t])  for t in idx], dtype=float)
     ch_arr  = np.array([pl.value(ch[t])  for t in idx], dtype=float)
@@ -156,4 +172,6 @@ def dispatch_compsim_cap(pv, load, p_retail, p_comp, month_ids, C):
     credit_vals = {m: float(pl.value(credit[m])) for m in months}
 
     dispatch = {"sc": sc_arr, "ch": ch_arr, "dis": dis_arr, "exp": exp_arr, "imp": imp_arr, "soc": soc_arr}
-    return op_value, dispatch, credit_vals
+    return energy_operating_value_y1, dispatch, credit_vals
+
+

@@ -67,7 +67,7 @@ def battery_capex_total(C_kWh: float) -> float:
 # ----------------------------
 def build_cashflows_and_npv(
     tech: str,
-    delta_energy_y1: float,
+    energy_operating_value_y1: float,
     delta_crop_y: float,
     pv_capex: float,
     pv_opex: float,
@@ -78,7 +78,7 @@ def build_cashflows_and_npv(
 
     Year 0: -(PV CAPEX + Battery CAPEX)
     Year y>=1:
-      + degraded(delta_energy_y1)
+      + degraded(energy_operating_value_y1)
       + delta_crop_y
       - pv_opex
       - bat_opex
@@ -92,7 +92,7 @@ def build_cashflows_and_npv(
     cf[0] = -(pv_capex + bat_capex)
 
     for year in range(1, PROJECT_YEARS + 1):
-        degraded_energy = delta_energy_y1 * ((1.0 - DEG[tech]) ** (year - 1))
+        degraded_energy = energy_operating_value_y1 * ((1.0 - DEG[tech]) ** (year - 1))
         cf[year] = degraded_energy + delta_crop_y - pv_opex - bat_opex
 
     if BAT_REPL_YEAR <= PROJECT_YEARS and bat_capex > 0:

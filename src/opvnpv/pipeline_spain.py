@@ -4,6 +4,13 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from .paths_local import (
+    HOURLY_BALANCE_PATH,
+    PRICE_SPAIN_CLEAN_PATH,
+    CROP_PATH,
+    OUT_SCAN,
+    OUT_BEST_PER_CROP,
+)
 
 from .params import (
     DISCOUNT_RATE, PROJECT_YEARS,
@@ -97,7 +104,7 @@ def apply_hoy_prices(df_h: pd.DataFrame, prices: pd.DataFrame) -> pd.DataFrame:
 
 
 # ----------------------------
-# 4) Run scan: objective-only (no bill logic)
+# 4) Run scan: objective-only NPV for each group / scheme / battery capacity
 # ----------------------------
 def run_scan(df_h: pd.DataFrame, crop_all: pd.DataFrame, p_comp: float) -> pd.DataFrame:
     group_cols = ["config", "region", "region_key", "tilt_deg", "technology", "scenario", "coverage_frac"]
@@ -142,7 +149,7 @@ def run_scan(df_h: pd.DataFrame, crop_all: pd.DataFrame, p_comp: float) -> pd.Da
 
                     # ----- DISPATCH: objective-only -----
                     if scheme == "ES_NoAcogida":
-                        op_y1, _dispatch = dispatch_no_acogida(
+                        energy_operating_value_y1, _dispatch = dispatch_no_acogida(
                             pv=pv,
                             load=load,
                             p_sell=p_sell,
@@ -150,7 +157,7 @@ def run_scan(df_h: pd.DataFrame, crop_all: pd.DataFrame, p_comp: float) -> pd.Da
                             C=C,
                         )
                     elif scheme == "ES_CompSimProxy_ExactCap":
-                        op_y1, _dispatch, _credit_vals = dispatch_compsim_cap(
+                        energy_operating_value_y1, _dispatch, _credit_vals = dispatch_compsim_cap(
                             pv=pv,
                             load=load,
                             p_retail=P_RETAIL_ES,
@@ -161,8 +168,7 @@ def run_scan(df_h: pd.DataFrame, crop_all: pd.DataFrame, p_comp: float) -> pd.Da
                     else:
                         raise ValueError(f"Unknown scheme: {scheme}")
 
-                    # By definition:
-                    delta_energy_y1 = op_y1
+
 
                     for crop_scen in crop_scenarios:
                         # crop_row[crop_scen] is absolute annual revenue under shading scenario
@@ -171,7 +177,7 @@ def run_scan(df_h: pd.DataFrame, crop_all: pd.DataFrame, p_comp: float) -> pd.Da
 
                         npv, cf = build_cashflows_and_npv(
                             tech=tech,
-                            delta_energy_y1=delta_energy_y1,
+                            energy_operating_value_y1=energy_operating_value_y1,
                             delta_crop_y=delta_crop_y,
                             pv_capex=pv_capex,
                             pv_opex=pv_opex,
@@ -190,10 +196,9 @@ def run_scan(df_h: pd.DataFrame, crop_all: pd.DataFrame, p_comp: float) -> pd.Da
                             "battery_kWh": C,
 
                             "NPV_eur": npv,
-                            "delta_energy_eur_y1": delta_energy_y1,
-                            "delta_crop_eur_y": delta_crop_y,
-                            "op_value_eur_y1": op_y1,
-
+                            "cashflows": cf,    
+                            "delta_crop_eur_y": delta_crop_y,       
+                            "energy_op_value_eur_y1": energy_operating_value_y1,
                             "pv_kWp": pv_kWp,
                             "pv_capex_eur": pv_capex,
                             "bat_capex_eur": bat_capex,
@@ -240,8 +245,7 @@ def main():
         OUT_DIR,
     )
 
-    OUT_SCAN = os.path.join(OUT_DIR, "ES_battery_scan_maxNPV_full_SPAIN.csv")
-    OUT_BEST_PER_CROP = os.path.join(OUT_DIR, "ES_battery_scan_maxNPV_best_per_crop_SPAIN.csv")
+#
 
     log("START Spain battery NPV optimization (objective-only)")
 
