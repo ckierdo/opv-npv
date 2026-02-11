@@ -1,3 +1,4 @@
+# economics.py: functions for computing economics (CAPEX, OPEX, cashflows, NPV) for PV and battery.
 import numpy as np
 
 from .params import (

@@ -36,6 +36,26 @@ def log(msg: str):
     s = int(elapsed % 60)
     print(f"[{h:02d}:{m:02d}:{s:02d}] {msg}", flush=True)
 
+def log_series(name: str, x: np.ndarray):
+    x = np.asarray(x, dtype=float)
+    log(f"{name}: n={x.size} | sum={x.sum():.6f} | min={x.min():.6f} | max={x.max():.6f}")
+# 1) Ersetze log_input_snapshot durch diese Version (oder füge sie zusätzlich ein)
+
+def log_input_snapshot_random(g: pd.DataFrame, n: int = 12, seed: int | None = None):
+    cols = [
+        "time_local_hour",
+        "pv_total_kWh",
+        "demand_low_kWh",
+        "demand_high_kWh",
+        "p_da",
+        "p_da_sell",
+        "month_id",
+    ]
+    gg = g.sort_values("time_local_hour").copy()
+    sample = gg[cols].sample(n=min(n, len(gg)), random_state=seed).sort_values("time_local_hour")
+    log(f"INPUT SNAPSHOT (random {len(sample)} rows, sorted)")
+    print(sample.to_string(index=False), flush=True)
+
 
 # ----------------------------
 # 1) Load hourly balance and filter region
@@ -123,10 +143,17 @@ def run_scan(df_h: pd.DataFrame, crop_all: pd.DataFrame, p_comp: float) -> pd.Da
         scen = str(g["scenario"].iloc[0])
 
         log(f"Group {gi+1}/{total_groups} | Tech={tech} | Cov={cov:.2f} | Tilt={tilt} | Scenario={scen}")
+        # 2) Aufrufstelle in run_scan: statt log_input_snapshot(g, n=6) z.B. so:
+
+        log_input_snapshot_random(g, n=12, seed=gi)   # seed=gi -> reproduzierbar pro Gruppe
 
         pv = g["pv_total_kWh"].to_numpy()
         p_sell = g["p_da_sell"].to_numpy()
         month_ids = g["month_id"].to_numpy()
+
+        log("GROUP INPUTS (full year)")
+        log_series("pv_total_kWh", pv)
+        log_series("p_da_sell_eur_per_kWh", p_sell)
 
         # PV economics
         pv_kWp, pv_capex, pv_opex = compute_pv_economics(tech, cov)
@@ -140,6 +167,17 @@ def run_scan(df_h: pd.DataFrame, crop_all: pd.DataFrame, p_comp: float) -> pd.Da
 
         for demand in ["low", "high"]:
             load = g[f"demand_{demand}_kWh"].to_numpy()
+     # === 3) HIER: direkt NACH load = ... ===
+            log(f"DEMAND INPUT USED: {demand}")
+            log_series(f"demand_{demand}_kWh", load)
+            # === 4) HIER: direkt NACH dem demand-log und VOR dem scheme-loop ===
+            sc0 = np.minimum(pv, load)
+            exp0 = np.clip(pv - load, 0, None)
+            imp0 = np.clip(load - pv, 0, None)
+            baseline_value = float(P_RETAIL_ES * sc0.sum() + np.sum(p_sell * exp0))
+            log("BASELINE (no battery, greedy)")
+            log(f"E_sc0_kWh: {sc0.sum():.6f} | E_exp0_kWh: {exp0.sum():.6f} | E_imp0_kWh: {imp0.sum():.6f}")
+            log(f"baseline_energy_value_eur: {baseline_value:.6f}")
 
             for scheme in schemes:
                 log(f"  Start: Scheme={scheme} | Demand={demand}")
@@ -148,6 +186,7 @@ def run_scan(df_h: pd.DataFrame, crop_all: pd.DataFrame, p_comp: float) -> pd.Da
                     bat_capex = battery_capex_total(C)
 
                     # ----- DISPATCH: objective-only -----
+                    _credit_vals = None
                     if scheme == "ES_NoAcogida":
                         energy_operating_value_y1, _dispatch = dispatch_no_acogida(
                             pv=pv,
@@ -168,8 +207,25 @@ def run_scan(df_h: pd.DataFrame, crop_all: pd.DataFrame, p_comp: float) -> pd.Da
                     else:
                         raise ValueError(f"Unknown scheme: {scheme}")
 
+ # === 5) HIER: direkt NACH dem Dispatch-Aufruf (also hier, vor crop_scen loop) ===
+                    sc_sum  = float(np.sum(_dispatch["sc"]))
+                    ch_sum  = float(np.sum(_dispatch["ch"]))
+                    dis_sum = float(np.sum(_dispatch["dis"]))
+                    exp_sum = float(np.sum(_dispatch["exp"]))
+                    imp_sum = float(np.sum(_dispatch["imp"]))
+                    bal_err = float(np.max(np.abs(_dispatch["sc"] + _dispatch["dis"] + _dispatch["imp"] - load)))
 
-
+                    log("DISPATCH RESULT")
+                    log(f"scheme={scheme} | demand={demand} | C={C}")
+                    log(f"energy_operating_value_eur_y1: {energy_operating_value_y1:.6f}")
+                    log(f"E_sc_kWh: {sc_sum:.6f} | E_ch_kWh: {ch_sum:.6f} | E_dis_kWh: {dis_sum:.6f}")
+                    log(f"E_exp_kWh: {exp_sum:.6f} | E_imp_kWh: {imp_sum:.6f}")
+                    log(f"max_balance_error_kWh: {bal_err:.12e}")
+                    # === 6) HIER: direkt NACH dem Dispatch-Result-Log, NUR falls credit vorhanden ===
+                    if _credit_vals is not None:
+                        total_credit = float(sum(_credit_vals.values()))
+                        log(f"total_credit_eur: {total_credit:.6f}")
+                        
                     for crop_scen in crop_scenarios:
                         # crop_row[crop_scen] is absolute annual revenue under shading scenario
                         # Baseline_Annual_Revenue_EUR is absolute baseline (no shading)
@@ -243,11 +299,16 @@ def main():
         PRICE_SPAIN_CLEAN_PATH,
         CROP_PATH,
         OUT_DIR,
+        OUT_SCAN,
+        OUT_BEST_PER_CROP,
     )
 
-#
+    # 🔍 DEBUG: welche Pfade sind wirklich aktiv?
+    log(f"OUT_SCAN = {OUT_SCAN}")
+    log(f"OUT_BEST_PER_CROP = {OUT_BEST_PER_CROP}")
 
     log("START Spain battery NPV optimization (objective-only)")
+
 
     df_h = load_hourly_balance(HOURLY_BALANCE_PATH, region_target="ALMERIA")
     prices, p_comp = load_prices(PRICE_SPAIN_CLEAN_PATH, price_col="Day-ahead Price (EUR/MWh)")
@@ -257,3 +318,4 @@ def main():
 
     df_scan = run_scan(df_h, crop_all, p_comp)
     save_outputs(df_scan, OUT_SCAN, OUT_BEST_PER_CROP)
+
